@@ -24,26 +24,18 @@ pub struct SharedSecret {
 impl SharedSecret {
     pub fn new(peer_key: &CoseKey) -> FidoResult<Self> {
         let rng = rand::SystemRandom::new();
-        let private = agreement::EphemeralPrivateKey::generate(&agreement::ECDH_P256, &rng)
-            .context(FidoErrorKind::GenerateKey)?;
-        let public = &mut [0u8; agreement::PUBLIC_KEY_MAX_LEN][..private.public_key_len()];
-        private
-            .compute_public_key(public)
-            .context(FidoErrorKind::GenerateKey)?;
-        let peer = P256Key::from_cose(peer_key)
-            .context(FidoErrorKind::ParsePublic)?
-            .bytes();
-        let peer = Input::from(&peer);
+        let private = agreement::EphemeralPrivateKey::generate(&agreement::ECDH_P256, &rng).unwrap();
+        let public = private.compute_public_key().unwrap();
+        let peer = agreement::UnparsedPublicKey::new(&agreement::ECDH_P256, public);
         let shared_secret = agreement::agree_ephemeral(
             private,
-            &agreement::ECDH_P256,
-            peer,
+            &peer,
             Unspecified,
             |material| Ok(digest::digest(&digest::SHA256, material)),
-        )
-        .context(FidoErrorKind::GenerateSecret)?;
+        ).unwrap();
+
         let mut res = SharedSecret {
-            public_key: P256Key::from_bytes(&public)
+            public_key: P256Key::from_bytes(peer.bytes().as_ref())
                 .context(FidoErrorKind::ParsePublic)?
                 .to_cose(),
             shared_secret: [0; 32],
@@ -109,11 +101,11 @@ impl SharedSecret {
         {
             Err(FidoErrorKind::DecryptPin)?;
         }
-        Ok(PinToken(hmac::SigningKey::new(&digest::SHA256, &out_bytes)))
+        Ok(PinToken(hmac::Key::new(hmac::HMAC_SHA256, &out_bytes)))
     }
 }
 
-pub struct PinToken(hmac::SigningKey);
+pub struct PinToken(hmac::Key);
 
 impl PinToken {
     pub fn auth(&self, data: &[u8]) -> [u8; 16] {
@@ -130,18 +122,12 @@ pub fn verify_signature(
     auth_data: &[u8],
     signature: &[u8],
 ) -> bool {
-    let public_key = Input::from(&public_key);
+    let peer_public_key = signature::UnparsedPublicKey::new(&signature::ECDSA_P256_SHA256_ASN1, public_key);
     let msg_len = client_data.len() + auth_data.len();
     let mut msg = Vec::with_capacity(msg_len);
     msg.extend_from_slice(auth_data);
     msg.extend_from_slice(client_data);
-    let msg = Input::from(&msg);
-    let signature = Input::from(signature);
-    signature::verify(
-        &signature::ECDSA_P256_SHA256_ASN1,
-        public_key,
-        msg,
-        signature,
-    )
-    .is_ok()
+
+
+    peer_public_key.verify(&msg, signature).is_ok()
 }

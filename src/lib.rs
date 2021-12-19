@@ -53,6 +53,9 @@ extern crate crypto as rust_crypto;
 extern crate num_traits;
 extern crate ring;
 extern crate untrusted;
+extern crate savefile;
+#[macro_use]
+extern crate savefile_derive;
 
 mod cbor;
 mod crypto;
@@ -78,6 +81,7 @@ use crate::cbor::{AuthenticatorData, GetAssertionRequest};
 use failure::{Fail, ResultExt};
 use num_traits::FromPrimitive;
 use rand::prelude::*;
+use savefile::prelude::*;
 use std::collections::BTreeMap;
 
 static BROADCAST_CID: [u8; 4] = [0xff, 0xff, 0xff, 0xff];
@@ -91,7 +95,7 @@ pub fn get_devices() -> FidoResult<impl Iterator<Item = hid::DeviceInfo>> {
 }
 
 /// A credential created by a FIDO2 authenticator.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Savefile)]
 pub struct FidoCredential {
     /// The ID provided by the authenticator.
     pub id: Vec<u8>,
